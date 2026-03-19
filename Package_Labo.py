@@ -48,23 +48,23 @@ def PID_RT(SP, PV, Man, MVMan, MVFF, Kc, Ti, Td, alpha, Ts, MVMin, MVMax, MV, MV
     mode manuel et anti-windup (saturation).
     """
     
-    # Vérification de sécurité : s'assurer qu'il y a des données d'entrée
-    if len(SP) == 0 or len(PV) == 0:
-        return
+   
 
     # Récupération des valeurs actuelles (k) depuis la fin des vecteurs
-    sp_k = SP[-1]
-    pv_k = PV[-1]
+    SP = SP[-1]
+    PV = PV[-1]
     man_k = Man[-1]
     mv_man_k = MVMan[-1]
     mv_ff_k = MVFF[-1]
 
     # 1. Initialisation de l'Erreur (E)
-    e_k = sp_k - pv_k
+    if len(PV) == 0:
+        E.append(SP[-1] - PVInit)
+    else:
+        E.append(SP[-1] - PV[-1])
 
     # 2. Calcul de la partie proportionnelle (MVP)
-    mv_p_k = Kc * e_k
-
+    mv_p_k = Kc * E[-1]
     # --- Gestion des valeurs précédentes (k-1) pour le calcul I et D ---
     if len(E) == 0: # Si c'est la toute première exécution de la boucle
         e_k_1 = sp_k - PVInit
