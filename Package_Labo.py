@@ -51,89 +51,60 @@ def PID_RT(SP, PV, Man, MVMan, MVFF, Kc, Ti, Td, alpha, Ts, MVMin, MVMax, MV, MV
     mode manuel et anti-windup (saturation).
     """
     
-    # Vérification de sécurité : s'assurer qu'il y a des données d'entrée
-    if len(SP) == 0 or len(PV) == 0:
-        return
+   
 
-    # Récupération des valeurs actuelles (k) depuis la fin des vecteurs
-    sp_k = SP[-1]
-    pv_k = PV[-1]
-    man_k = Man[-1]
-    mv_man_k = MVMan[-1]
-    mv_ff_k = MVFF[-1]
+   
+    methodI, methodD = method.split('-')
+    Tfd = alpha * Td
 
-    # 1. Initialisation de l'Erreur (E)
-    e_k = sp_k - pv_k
-
-    # 2. Calcul de la partie proportionnelle (MVP)
-    mv_p_k = Kc * e_k
-
-    # --- Gestion des valeurs précédentes (k-1) pour le calcul I et D ---
-    if len(E) == 0: # Si c'est la toute première exécution de la boucle
-        e_k_1 = sp_k - PVInit
-        mvi_k_1 = 0.0
-        mvd_k_1 = 0.0
+    if len(PV) == 0:
+        E.append(SP[-1] - PVInit)
     else:
-        e_k_1 = E[-1]
-        mvi_k_1 = MVI[-1]
-        mvd_k_1 = MVD[-1]
+        E.append(SP[-1] - PV[-1])
 
-    # Parsing des méthodes de discrétisation
-    method_I, method_D = method.split('-')
+    MVP.append(Kc * E[-1])
 
-    # 3. Calcul de la partie intégrale (MVI)
     if Ti > 0:
-        if method_I == 'EBD':
-            mv_i_k = mvi_k_1 + (Kc * Ts / Ti) * e_k
-        elif method_I == 'TRAP':
-            mv_i_k = mvi_k_1 + (Kc * Ts / (2 * Ti)) * (e_k + e_k_1)
+        if len(MVI) == 0:
+            MVI.append((Kc * Ts / Ti) * E[-1])
         else:
-            mv_i_k = mvi_k_1
+            if methodI == 'TRAP':
+                MVI.append(MVI[-1] + (0.5 * Kc * Ts / Ti) * (E[-1] + E[-2]))
+            else:
+                MVI.append(MVI[-1] + (Kc * Ts / Ti) * E[-1])
     else:
-        mv_i_k = 0.0
+        MVI.append(0.0)
 
-    # 4. Calcul de la partie dérivée (MVD) avec filtre
     if Td > 0:
-        Tfd = alpha * Td  # Constante de temps du filtre dérivé
-        if method_D == 'EBD':
-            mv_d_k = (Tfd / (Tfd + Ts)) * mvd_k_1 + (Kc * Td / (Tfd + Ts)) * (e_k - e_k_1)
-        elif method_D == 'TRAP':
-            mv_d_k = ((Tfd - Ts/2) / (Tfd + Ts/2)) * mvd_k_1 + (Kc * Td / (Tfd + Ts/2)) * (e_k - e_k_1)
+        if len(MVD) == 0:
+            MVD.append(0.0)
         else:
-            mv_d_k = 0.0
+            if methodD == 'EBD':
+                MVD.append((Tfd / (Tfd + Ts)) * MVD[-1] + (Kc * Td / (Tfd + Ts)) * (E[-1] - E[-2]))
+            elif methodD == 'TRAP':
+                MVD.append(((Tfd - Ts / 2) / (Tfd + Ts / 2)) * MVD[-1] + (Kc * Td / (Tfd + Ts / 2)) * (E[-1] - E[-2]))
+            else:
+                MVD.append(0.0)
     else:
-        mv_d_k = 0.0
+        MVD.append(0.0)
 
-    # 5. Gestion du mode Manuel (Man) et de son reset d'Intégrale
-    if man_k:
+    if Man[-1] == True:
         if ManFF:
-            # Si le FeedForward est activé en manuel : MV = MVMan + MVFF
-            mv_i_k = mv_man_k - mv_p_k - mv_d_k
+            MVI[-1] = MVMan[-1] - MVP[-1] - MVD[-1]
         else:
-            # Mode manuel standard : MV = MVMan
-            mv_i_k = mv_man_k - mv_p_k - mv_d_k - mv_ff_k
+            MVI[-1] = MVMan[-1] - MVP[-1] - MVD[-1] - MVFF[-1]
+    else:
+        MV_temp = MVP[-1] + MVI[-1] + MVD[-1] + MVFF[-1]
+        if MV_temp > MVMax:
+            MVI[-1] = MVMax - MVP[-1] - MVD[-1] - MVFF[-1]
+        elif MV_temp < MVMin:
+            MVI[-1] = MVMin - MVP[-1] - MVD[-1] - MVFF[-1]
 
-    # 6. Gestion de la Saturation (Anti-windup)
-    # Le calcul anti-windup s'applique uniquement si on n'est PAS en mode manuel
-    elif not man_k:
-        mv_temp = mv_p_k + mv_i_k + mv_d_k + mv_ff_k
-        if mv_temp > MVMax:
-            mv_i_k = MVMax - mv_p_k - mv_d_k - mv_ff_k
-        elif mv_temp < MVMin:
-            mv_i_k = MVMin - mv_p_k - mv_d_k - mv_ff_k
+    MV_k = MVP[-1] + MVI[-1] + MVD[-1] + MVFF[-1]
 
-    # 7. Calcul final de MV
-    mv_k = mv_p_k + mv_i_k + mv_d_k + mv_ff_k
+    if MV_k > MVMax:
+        MV_k = MVMax
+    elif MV_k < MVMin:
+        MV_k = MVMin
 
-    # Double sécurité : forcer la saturation finale des limites
-    if mv_k > MVMax:
-        mv_k = MVMax
-    elif mv_k < MVMin:
-        mv_k = MVMin
-
-    # --- Ajout (Append) des nouvelles valeurs calculées aux vecteurs ---
-    E.append(e_k)
-    MVP.append(mv_p_k)
-    MVI.append(mv_i_k)
-    MVD.append(mv_d_k)
-    MV.append(mv_k)
+    MV.append(MV_k)
