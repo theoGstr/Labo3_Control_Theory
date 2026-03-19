@@ -45,66 +45,123 @@ def LL_RT(MV,Kp,Tlag,Tlead,Ts,PV,PVInit=0,method='EBD'):
         
 #-----------------------------------        
 def PID_RT(SP, PV, Man, MVMan, MVFF, Kc, Ti, Td, alpha, Ts, MVMin, MVMax, MV, MVP, MVI, MVD, E, ManFF=False, PVInit=0, method='EBD-EBD'):
-    
     """
-    Calcule et ajoute les nouvelles valeurs d'un contrôleur PID en temps réel avec feedforward, 
-    mode manuel et anti-windup (saturation).
+    The function "PID_RT" needs to be included in a "for or while loop".
+
+    :SP:     SP (or SetPoint) vector
+    :PV:     PV (or Process Value) vector
+    :Man:    Man (or Manual controller mode) vector (True or False)
+    :MVMan:  MVMan (or Manual value for MV) vector
+    :MVFF:   MVFF (or FeedForward) vector
+
+    :Kc:     controller gain
+    :Ti:     Integral time constant [s]
+    :Td:     derivative time constant [s]
+    :alpha:  Tfd = alpha*Td where Tfd is the derivative filter time constant [s]
+    :Ts:     sampling period [s]
+
+    :MVMin:  minimum value for MV (used for saturation and anti wind-up)
+    :MVMax:  maximum value for MV (used for saturation and anti wind-up)
+
+    :MV:     MV (or Manipulated Value) vector
+    :MVP:    MVP (or Proportional part of MV) vector
+    :MVI:    MVI (or Integral part of MV) vector
+    :MVD:    MVD (or Derivative part of MV) vector
+    :E:      E (or control Error) vector
+
+    :ManFF:  Activated FF in manual mode (optional: default boolean value is False)
+    :PVInit: Initial value for PV (optional: default value is 0);
+             used if PID_RT is run first in the sequence and no value of PV is available yet.
+    :method: discretisation method (optional: default value is 'EBD-EBD')
+             EBD-EBD: EBD for integral action and EBD for derivative action
+             EBD-TRAP: EBD integral action and TRAP for derivative action
+             TRAP-EBD: TRAP for integral action and EBD for derivative action
+             TRAP-TRAP: TRAP for integral action and TRAP for derivative action
+
+    The function "PID_RT" appends new values to the vectors "MV", "MVP", "MVI", and "MVD".
+    The appended values are based on the PID algorithm, the controller mode, and feedforward.
+    Note that saturation of "MV" within the limits [MVMin MVMax] is implemented with anti wind-up.
     """
-    
-   
 
-   
-    methodI, methodD = method.split('-')
-    Tfd = alpha * Td
+    # Parse discretisation methods
+    method_I, method_D = method.split('-')
 
+    # -------------------------------------------------------------------------
+    # 1. Initialisation of E  (append first, then use E[-1], E[-2])
+    # -------------------------------------------------------------------------
     if len(PV) == 0:
         E.append(SP[-1] - PVInit)
     else:
         E.append(SP[-1] - PV[-1])
 
+    # -------------------------------------------------------------------------
+    # 2. Compute MVP (proportional part) and append
+    # -------------------------------------------------------------------------
     MVP.append(Kc * E[-1])
 
+    # -------------------------------------------------------------------------
+    # 3. Compute MVI (integral part) and append
+    #    - First call: always initialise with EBD
+    #    - Subsequent calls: use chosen method (TRAP or EBD)
+    # -------------------------------------------------------------------------
     if Ti > 0:
         if len(MVI) == 0:
+            # Initialisation: always EBD on very first step
             MVI.append((Kc * Ts / Ti) * E[-1])
         else:
-            if methodI == 'TRAP':
+            if method_I == 'TRAP':
                 MVI.append(MVI[-1] + (0.5 * Kc * Ts / Ti) * (E[-1] + E[-2]))
-            else:
+            else:  # EBD (default)
                 MVI.append(MVI[-1] + (Kc * Ts / Ti) * E[-1])
     else:
         MVI.append(0.0)
 
-    if Td > 0:
+    # -------------------------------------------------------------------------
+    # 4. Compute MVD (derivative part with filter) and append
+    # -------------------------------------------------------------------------
+    if Td > 0 and alpha > 0:
+        Tfd = alpha * Td
         if len(MVD) == 0:
+            # Initialisation: no previous error available, derivative starts at 0
             MVD.append(0.0)
         else:
-            if methodD == 'EBD':
-                MVD.append((Tfd / (Tfd + Ts)) * MVD[-1] + (Kc * Td / (Tfd + Ts)) * (E[-1] - E[-2]))
-            elif methodD == 'TRAP':
-                MVD.append(((Tfd - Ts / 2) / (Tfd + Ts / 2)) * MVD[-1] + (Kc * Td / (Tfd + Ts / 2)) * (E[-1] - E[-2]))
-            else:
-                MVD.append(0.0)
+            if method_D == 'TRAP':
+                MVD.append(
+                    ((Tfd - Ts / 2) / (Tfd + Ts / 2)) * MVD[-1]
+                    + (Kc * Td / (Tfd + Ts / 2)) * (E[-1] - E[-2])
+                )
+            else:  # EBD (default)
+                MVD.append(
+                    (Tfd / (Tfd + Ts)) * MVD[-1]
+                    + (Kc * Td / (Tfd + Ts)) * (E[-1] - E[-2])
+                )
     else:
         MVD.append(0.0)
 
+    # -------------------------------------------------------------------------
+    # 5. Integrator reset: Manual mode
+    #    Modify MVI[-1] in place (no re-append — as shown by teacher's crossed APPEND)
+    # -------------------------------------------------------------------------
     if Man[-1] == True:
         if ManFF:
+            # MV = MVMan + MVFF  =>  MVI = MVMan - MVP - MVD
             MVI[-1] = MVMan[-1] - MVP[-1] - MVD[-1]
         else:
+            # MV = MVMan  =>  MVI = MVMan - MVP - MVD - MVFF
             MVI[-1] = MVMan[-1] - MVP[-1] - MVD[-1] - MVFF[-1]
+
+    # -------------------------------------------------------------------------
+    # 6. Integrator reset: Actuator saturation (anti wind-up)
+    #    Only applies in automatic mode
+    # -------------------------------------------------------------------------
     else:
-        MV_temp = MVP[-1] + MVI[-1] + MVD[-1] + MVFF[-1]
-        if MV_temp > MVMax:
+        mv_temp = MVP[-1] + MVI[-1] + MVD[-1] + MVFF[-1]
+        if mv_temp > MVMax:
             MVI[-1] = MVMax - MVP[-1] - MVD[-1] - MVFF[-1]
-        elif MV_temp < MVMin:
+        elif mv_temp < MVMin:
             MVI[-1] = MVMin - MVP[-1] - MVD[-1] - MVFF[-1]
 
-    MV_k = MVP[-1] + MVI[-1] + MVD[-1] + MVFF[-1]
-
-    if MV_k > MVMax:
-        MV_k = MVMax
-    elif MV_k < MVMin:
-        MV_k = MVMin
-
-    MV.append(MV_k)
+    # -------------------------------------------------------------------------
+    # 7. Compute final MV and append
+    # -------------------------------------------------------------------------
+    MV.append(MVP[-1] + MVI[-1] + MVD[-1] + MVFF[-1])
