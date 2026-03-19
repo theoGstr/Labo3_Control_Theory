@@ -40,6 +40,9 @@ def LL_RT(MV,Kp,Tlag,Tlead,Ts,PV,PVInit=0,method='EBD'):
                 PV.append((1/(1+K))*PV[-1] + (K*Kp/(1+K))*MV[-1])
     else:
         PV.append(Kp*MV[-1])
+
+
+        
 #-----------------------------------        
 def PID_RT(SP, PV, Man, MVMan, MVFF, Kc, Ti, Td, alpha, Ts, MVMin, MVMax, MV, MVP, MVI, MVD, E, ManFF=False, PVInit=0, method='EBD-EBD'):
     
