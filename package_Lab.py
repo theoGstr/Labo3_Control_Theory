@@ -120,3 +120,5 @@ def PID_RT(SP, PV, Man, MVMan, MVFF, Kc, Ti, Td, alpha, Ts,
     # even when MVD spikes.
     mv_k = MVP[-1] + MVI[-1] + MVD[-1] + ff
     MV.append(max(MVMin, min(MVMax, mv_k)))
+
+
