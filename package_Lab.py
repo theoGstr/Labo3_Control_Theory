@@ -122,3 +122,27 @@ def PID_RT(SP, PV, Man, MVMan, MVFF, Kc, Ti, Td, alpha, Ts,
     MV.append(max(MVMin, min(MVMax, mv_k)))
 
 
+def IMC_tuning(K, T1, T2, theta, gamma):
+    """
+    Calcule les paramètres d'un régulateur PID en utilisant la méthode IMC (Internal Model Control).
+    
+    Arguments:
+    K     -- Gain statique du procédé
+    T1    -- Constante de temps principale [s]
+    T2    -- Deuxième constante de temps [s]
+    theta -- Retard pur (dead time) [s]
+    gamma -- Facteur d'agressivité (tau_c = gamma * T1). 
+             Plus gamma est petit (< 1), plus le réglage est agressif.
+    
+    Retourne:
+    Kc, Ti, Td -- Gains proportionnel, intégral et dérivé pour le PID
+    """
+
+    tau_c = gamma * T1 
+    
+    # Formules IMC pour SOPDT (Série -> Parallèle conversion)
+    Kc = (T1 + T2) / (K * (tau_c + theta))
+    Ti = T1 + T2
+    Td = (T1 * T2) / (T1 + T2)
+    
+    return Kc, Ti, Td
