@@ -25,7 +25,7 @@ def LL_RT(MV,Kp,Tlag,Tlead,Ts,PV,PVInit=0,method='EBD'):
     """    
     
     if (Tlag != 0):
-        K = Ts/Tlag
+        K = float(Ts)/Tlag
         if len(PV) == 0:
             PV.append(PVInit)
         else: # MV[k+1] is MV[-1] and MV[k] is MV[-2]
@@ -42,11 +42,10 @@ def LL_RT(MV,Kp,Tlag,Tlead,Ts,PV,PVInit=0,method='EBD'):
         PV.append(Kp*MV[-1])
 
 
-        
 #-----------------------------------        
 def PID_RT(SP, PV, Man, MVMan, MVFF, Kc, Ti, Td, alpha, Ts, 
            MVMin, MVMax, MV, MVP, MVI, MVD, E, 
-           ManFF=False, PVInit=0, method='EBD-EBD'):
+           ManFF=False, PVInit=0, method='EBD'):
     """
     Real-time PID controller with feedforward, manual mode, and anti wind-up.
     
@@ -56,7 +55,6 @@ def PID_RT(SP, PV, Man, MVMan, MVFF, Kc, Ti, Td, alpha, Ts,
     causes MVI to jump violently at SP steps, producing an unwanted MV bump.
     The final MV output is hard-clamped to [MVMin, MVMax] instead.
     """
-    method_I, method_D = method.split('-')
 
     # 1. Error calculation
     # If PV is empty (initial step), use PVInit to calculate the first error
@@ -73,7 +71,7 @@ def PID_RT(SP, PV, Man, MVMan, MVFF, Kc, Ti, Td, alpha, Ts,
     if Ti > 0:
         if len(MVI) == 0:
             MVI.append((Kc * Ts / Ti) * E[-1])
-        elif method_I == 'TRAP':
+        elif method== 'TRAP':
             MVI.append(MVI[-1] + (0.5 * Kc * Ts / Ti) * (E[-1] + E[-2]))
         else: # Default to EBD
             MVI.append(MVI[-1] + (Kc * Ts / Ti) * E[-1])
@@ -85,16 +83,12 @@ def PID_RT(SP, PV, Man, MVMan, MVFF, Kc, Ti, Td, alpha, Ts,
         Tfd = alpha * Td
         if len(MVD) == 0:
             MVD.append(0.0)
-        elif method_D == 'TRAP':
-            MVD.append(((Tfd - Ts/2) / (Tfd + Ts/2)) * MVD[-1] 
-                       + (Kc * Td / (Tfd + Ts/2)) * (E[-1] - E[-2]))
+        elif method == 'TRAP':
+            MVD.append(((Tfd - Ts/2) / (Tfd + Ts/2)) * MVD[-1] + (Kc * Td / (Tfd + Ts/2)) * (E[-1] - E[-2]))
         else: # Default to EBD
-            MVD.append((Tfd / (Tfd + Ts)) * MVD[-1] 
-                       + (Kc * Td / (Tfd + Ts)) * (E[-1] - E[-2]))
+            MVD.append((Tfd / (Tfd + Ts)) * MVD[-1] + (Kc * Td / (Tfd + Ts)) * (E[-1] - E[-2]))
     else:
         MVD.append(0.0)
-
-    ff = MVFF[-1]
 
     # 5. Manual Mode Handling (Bumpless Transfer)
     # In manual mode, we force the Integrator so that MVP + MVI + MVD + MVFF = MVMan
@@ -102,23 +96,23 @@ def PID_RT(SP, PV, Man, MVMan, MVFF, Kc, Ti, Td, alpha, Ts,
         if ManFF:
             MVI[-1] = MVMan[-1] - MVP[-1] - MVD[-1]
         else:
-            MVI[-1] = MVMan[-1] - MVP[-1] - MVD[-1] - ff
+            MVI[-1] = MVMan[-1] - MVP[-1] - MVD[-1] - MVFF[-1]
 
     # 6. Anti Wind-Up Logic (Automatic Mode)
     else:
-        mv_temp = MVP[-1] + MVI[-1] + MVD[-1] + ff
+        mv_temp = MVP[-1] + MVI[-1] + MVD[-1] + MVFF[-1]
         
         # If output saturates, we reset MVI to the limit MINUS Proportional and FF.
         # Rationale: Excluding MVD keeps MVI smooth and monotonic during SP steps.
         if mv_temp > MVMax:
-            MVI[-1] = MVMax - MVP[-1] - ff
+            MVI[-1] = MVMax - MVP[-1] - MVFF[-1]
         elif mv_temp < MVMin:
-            MVI[-1] = MVMin - MVP[-1] - ff
+            MVI[-1] = MVMin - MVP[-1] - MVFF[-1]
 
     # 7. Final Output Calculation & Hard Clamp
     # The hard clamp ensures the physical actuator limits are respected 
     # even when MVD spikes.
-    mv_k = MVP[-1] + MVI[-1] + MVD[-1] + ff
+    mv_k = MVP[-1] + MVI[-1] + MVD[-1] + MVFF[-1]
     MV.append(max(MVMin, min(MVMax, mv_k)))
 
 
