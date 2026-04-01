@@ -1,6 +1,6 @@
 import numpy as np
-
 import matplotlib.pyplot as plt
+from package_DBR import Bode
 
 #-----------------------------------        
 def LL_RT(MV,Kp,Tlag,Tlead,Ts,PV,PVInit=0,method='EBD'):
@@ -140,3 +140,81 @@ def IMC_tuning(K, T1, T2, theta, gamma):
     Td = (T1 * T2) / (T1 + T2)
     
     return Kc, Ti, Td
+
+
+def Margin(P, Cparams, omega, Show=True):
+    """
+    Calcule la margin de gain et la margin de phase pour analyser la robustesse du PID.
+    
+    Arguments:
+    Ps      : Réponse en fréquence du procédé (obtenue via Bode)
+    Cparams : Dictionnaire contenant les paramètres Kc, Ti, Td et alpha
+    omega   : Vecteur de fréquence [rad/s]
+    Show    : Affiche le diagramme de Bode avec les margins 
+
+    Dependence: package_DBR Bode()
+    """
+    # 1. Calcul de la réponse du Procédé P(s)
+    Ps = Bode(P, omega, Show=False)
+    
+    # 2. Initialisation des paramètres du Contrôleur
+    s = 1j * omega
+    Kc = Cparams['Kc']
+    Ti = Cparams['Ti']
+    Td = Cparams['Td']
+    alpha = Cparams['alpha']
+    Tfd = alpha * Td 
+    
+    # 3. Calcul du Controller Cs
+    Cs = Kc * (1 + 1/(Ti * s) + (Td * s)/(Tfd * s + 1))
+    
+    # 4. Loop gain Ls = Ps * Cs
+    Ls = Cs * Ps 
+    
+    # 5. Calcul des amplitudes et phases
+    magdb = 20 * np.log10(np.abs(Ls))
+    phasedeg = (180/np.pi) * np.unwrap(np.angle(Ls))
+
+    # --- CALCUL DES marginS ---
+    idxgc = np.argmin(np.abs(magdb)) 
+    OmegaC = omega[idxgc]
+    PhaseC = phasedeg[idxgc]
+    MP = PhaseC + 180
+
+    idxpc = np.argmin(np.abs(phasedeg + 180))
+    OmegaU = omega[idxpc]
+    GainUdb = magdb[idxpc]
+    MG = -GainUdb
+    # --- AFFICHAGE GRAPHIQUE ---
+    if Show:
+        fig, (axfreq, axtime) = plt.subplots(2, 1)
+        fig.set_figheight(12)
+        fig.set_figwidth(22)
+
+        axfreq.semilogx(omega, magdb, label='L(s) = C(s)P(s)', color='blue', linewidth=2)
+        axfreq.axhline(y=0, color='black', linestyle='-')
+        axfreq.plot([OmegaU, OmegaU], [0, GainUdb], color='red', linestyle='--', linewidth=3, label=f'MG = {MG:.2f} dB')
+        axfreq.set_xlim([np.min(omega), np.max(omega)])
+        axfreq.set_ylim([np.min(magdb), np.max(magdb)]) 
+        axfreq.set_ylabel('Amplitude |L| [dB]')
+        axfreq.set_title('Diagramme de Bode de la Boucle Ouverte L(s)')
+        axfreq.legend(loc='best')
+        axfreq.grid(True, which="both", ls="-", alpha=0.5)
+
+        axtime.semilogx(omega, phasedeg, label='L(s)', color='orange', linewidth=2)
+        axtime.axhline(y=-180, color='black', linestyle='-')
+        axtime.plot([OmegaC, OmegaC], [PhaseC, -180], color='green', linestyle='--', linewidth=3, label=f'MP = {MP:.2f}°')
+        axtime.set_xlim([np.min(omega), np.max(omega)])
+        axtime.set_ylim([np.max([np.min(phasedeg), -270]), np.max(phasedeg)])
+        axtime.set_ylabel(r'Phase $\angle L$ [°]')
+        axtime.set_xlabel(r'Fréquence $\omega$ [rad/s]')
+        axtime.legend(loc='best')
+        axtime.grid(True, which="both", ls="-", alpha=0.5)
+
+        plt.tight_layout()
+        plt.show()
+
+    print(f'Gain margin : {MG:.2f} dB at the ultimate frequency : {OmegaU:.4f} rad/s')
+    print(f'Phase margin : {MP:.2f}° at the crossover frequency : {OmegaC:.4f} rad/s')
+
+    return MG, MP
